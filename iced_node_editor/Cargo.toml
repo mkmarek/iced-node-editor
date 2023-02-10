@@ -1,0 +1,12 @@
+[package]
+name = "iced_node_editor"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+iced = { version ="0.7.0" }
+iced_native = "0.8.0"
+iced_graphics = "0.6.0"
+palette = "0.6.1"

@@ -1,0 +1,49 @@
+name: Deploy basic example to github pages
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Install latest rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          default: true
+          override: true
+      - name: Build
+        run: cargo build -p basic_example --target wasm32-unknown-unknown --release
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli
+      - name: Generate JS bindings
+        run: wasm-bindgen target/wasm32-unknown-unknown/release/basic_example.wasm --out-dir web --target web --no-typescript
+      - name: Copy index.html
+        run: cp examples/basic/index.html web   
+      - name: Setup Pages
+        uses: actions/configure-pages@v3
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: 'web'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
