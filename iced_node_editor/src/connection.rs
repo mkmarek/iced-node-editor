@@ -2,7 +2,10 @@ use std::sync::Mutex;
 
 use iced::{Length, Point, Size, Vector};
 use iced_graphics::triangle::{ColoredVertex2D, Mesh2D};
-use iced_native::{renderer::{self}, Widget};
+use iced_native::{
+    renderer::{self},
+    Widget,
+};
 
 use crate::{
     mesh_renderer::MeshRenderer,
@@ -22,7 +25,7 @@ where
     style: <Renderer::Theme as StyleSheet>::Style,
 
     phantom_message: std::marker::PhantomData<Message>,
-    scale: Mutex<f32>
+    scale: Mutex<f32>,
 }
 
 impl<Message, Renderer> Connection<Message, Renderer>
@@ -75,7 +78,10 @@ where
         let width = (self.from.x - self.to.x).abs().max(self.width);
         let height = (self.from.y - self.to.y).abs().max(self.width);
 
-        let node = iced_native::layout::Node::new(Size::new(width * scale, height * scale));
+        let node = iced_native::layout::Node::new(Size::new(
+            (width * scale).max(1.0),
+            (height * scale).max(1.0),
+        ));
 
         let mut self_state = self.scale.lock().expect("Could not lock mutex");
         *self_state = scale;
@@ -141,7 +147,12 @@ where
         let midpoint = (from + to) * 0.5_f32;
 
         let mut spline = generate_spline(from, control_a, midpoint, self.number_of_segments);
-        spline.extend(generate_spline(midpoint, control_b, to, self.number_of_segments));
+        spline.extend(generate_spline(
+            midpoint,
+            control_b,
+            to,
+            self.number_of_segments,
+        ));
 
         let (vertices, indices) = line_to_polygon(&spline, self.width / 2.0);
 
@@ -204,7 +215,7 @@ fn line_to_polygon(points: &[Vector], width: f32) -> (Vec<Vector>, Vec<u32>) {
         indices.push(start);
         indices.push(start + 2);
         indices.push(start + 3);
-        
+
         last = *point;
     }
 
@@ -235,7 +246,12 @@ fn spline(start: Vector, control: Vector, end: Vector, t: f32) -> Vector {
     a + b + c + d
 }
 
-fn generate_spline(start: Vector, control: Vector, end: Vector, num_segments: usize) -> Vec<Vector> {
+fn generate_spline(
+    start: Vector,
+    control: Vector,
+    end: Vector,
+    num_segments: usize,
+) -> Vec<Vector> {
     let mut spline_points = vec![];
 
     for i in 0..=num_segments {

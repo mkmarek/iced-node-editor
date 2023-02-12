@@ -351,6 +351,19 @@ where
                 let layout = children_layout.next().unwrap();
                 let node = self.content[i].as_widget();
 
+                let child_bounds = layout.bounds();
+                let intersect = child_bounds.intersection(&bounds);
+
+                if intersect.is_none() {
+                    continue;
+                }
+
+                let intersect = intersect.unwrap();
+
+                if intersect.width < 1.0 || intersect.height < 1.0 {
+                    continue;
+                }
+
                 node.draw(
                     &state.children[i],
                     renderer,
@@ -422,7 +435,7 @@ fn draw_guidelines<'a, Renderer>(
     for x in 0..number_of_steps {
         let x = from_x + (x as f32 * step);
 
-        if x < bounds.x || x > bounds.x + bounds.width {
+        if x <= bounds.x || x >= bounds.x + bounds.width {
             continue;
         }
 
@@ -450,7 +463,7 @@ fn draw_guidelines<'a, Renderer>(
     for y in 0..number_of_steps {
         let y = from_y + (y as f32 * step);
 
-        if y < bounds.y || y > bounds.y + bounds.height {
+        if y <= bounds.y || y >= bounds.y + bounds.height {
             continue;
         }
 
