@@ -38,8 +38,8 @@ where
             spline: Mutex::new(Vec::new()),
             from,
             to,
-            width: 1.0,
-            number_of_segments: 10,
+            width: 1.2,
+            number_of_segments: 20,
             phantom_message: std::marker::PhantomData,
             style: Default::default(),
         }
@@ -75,54 +75,30 @@ where
         _limits: &iced_native::layout::Limits,
         scale: f32,
     ) -> iced_native::layout::Node {
-        let min_x = self.from.x.min(self.to.x);
-        let max_x = self.from.x.max(self.to.x);
-        let min_y = self.from.y.min(self.to.y);
+        let spline = generate_spline(
+            Vector::new(self.from.x, self.from.y) * scale,
+            1.0,
+            Vector::new(self.to.x, self.to.y) * scale,
+            self.number_of_segments,
+            1.0_f32,
+        );
 
-        let width = (max_x - min_x).max(self.width);
-
-        let from = Vector::new((self.from.x - min_x) * scale, (self.from.y - min_y) * scale);
-        let to = Vector::new((self.to.x - min_x) * scale, (self.to.y - min_y) * scale);
-
-        let control_scale = width.max(10.0_f32) * scale;
-
-        let spline = generate_spline(from, control_scale, to, self.number_of_segments, 0.5_f32);
-
-        let spline_min_x = spline
-            .iter()
-            .map(|p| p.x)
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let spline_min_y = spline
-            .iter()
-            .map(|p| p.y)
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let spline_max_x = spline
-            .iter()
-            .map(|p| p.x)
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let spline_max_y = spline
-            .iter()
-            .map(|p| p.y)
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
+        let spline_bounds = bounds_for_vectors(&spline);
 
         let spline = spline
             .iter()
-            .map(|p| Vector::new(p.x - spline_min_x, p.y - spline_min_y))
+            .map(|p| Vector::new(p.x - spline_bounds.x, p.y - spline_bounds.y))
             .collect();
 
         let node = iced_native::layout::Node::new(Size::new(
-            (spline_max_x - spline_min_x).max(1.0),
-            (spline_max_y - spline_min_y).max(1.0),
+            (spline_bounds.width + self.width).ceil(),
+            (spline_bounds.height + self.width).ceil(),
         ));
 
         let mut self_state = self.spline.lock().expect("Could not lock mutex");
         *self_state = spline;
 
-        node.translate(Vector::new(min_x * scale + spline_min_x, min_y * scale + spline_min_y))
+        node.translate(Vector::new(spline_bounds.x, spline_bounds.y))
     }
 }
 
@@ -234,7 +210,13 @@ fn dot_vector(vector: Vector, other: Vector) -> f32 {
     vector.x * other.x + vector.y * other.y
 }
 
-fn generate_spline(from: Vector, control_scale: f32, to: Vector, number_of_segments: usize, alpha: f32) -> Vec<Vector> {
+fn generate_spline(
+    from: Vector,
+    control_scale: f32,
+    to: Vector,
+    number_of_segments: usize,
+    alpha: f32,
+) -> Vec<Vector> {
     let mut spline = Vec::new();
 
     for i in 0..number_of_segments {
@@ -267,12 +249,41 @@ fn catmull_rom(p0: Vector, p1: Vector, p2: Vector, p3: Vector, t: f32, alpha: f3
     let t2 = get_t(t1, alpha, p1, p2);
     let t3 = get_t(t2, alpha, p2, p3);
     let t = t1 + (t2 - t1) * t;
-    let a1 = p0 * ((t1 - t) / (t1 - t0)) + p1 *((t - t0) / (t1 - t0));
-    let a2 = p1 * ((t2 - t) / (t2 - t1)) + p2 *((t - t1) / (t2 - t1));
-    let a3 = p2 * ((t3 - t) / (t3 - t2)) + p3 *((t - t2) / (t3 - t2));
-    let b1 = a1 * ((t2 - t) / (t2 - t0)) + a2 *((t - t0) / (t2 - t0));
-    let b2 = a2 * ((t3 - t) / (t3 - t1)) + a3 *((t - t1) / (t3 - t1));
-    let c = b1 * ((t2 - t) / (t2 - t1)) + b2 *((t - t1) / (t2 - t1));
+    let a1 = p0 * ((t1 - t) / (t1 - t0)) + p1 * ((t - t0) / (t1 - t0));
+    let a2 = p1 * ((t2 - t) / (t2 - t1)) + p2 * ((t - t1) / (t2 - t1));
+    let a3 = p2 * ((t3 - t) / (t3 - t2)) + p3 * ((t - t2) / (t3 - t2));
+    let b1 = a1 * ((t2 - t) / (t2 - t0)) + a2 * ((t - t0) / (t2 - t0));
+    let b2 = a2 * ((t3 - t) / (t3 - t1)) + a3 * ((t - t1) / (t3 - t1));
+    let c = b1 * ((t2 - t) / (t2 - t1)) + b2 * ((t - t1) / (t2 - t1));
 
     c
+}
+
+fn bounds_for_vectors(points: &[Vector]) -> iced::Rectangle {
+    let mut min_x = points[0].x;
+    let mut min_y = points[0].y;
+    let mut max_x = points[0].x;
+    let mut max_y = points[0].y;
+
+    for point in points.iter().skip(1) {
+        if point.x < min_x {
+            min_x = point.x;
+        }
+        if point.y < min_y {
+            min_y = point.y;
+        }
+        if point.x > max_x {
+            max_x = point.x;
+        }
+        if point.y > max_y {
+            max_y = point.y;
+        }
+    }
+
+    iced::Rectangle {
+        x: min_x,
+        y: min_y,
+        width: max_x - min_x,
+        height: max_y - min_y,
+    }
 }
