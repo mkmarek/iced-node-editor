@@ -25,7 +25,7 @@ where
     style: <Renderer::Theme as StyleSheet>::Style,
 
     phantom_message: std::marker::PhantomData<Message>,
-    scale: Mutex<f32>,
+    spline: Mutex<Vec<Vector>>,
 }
 
 impl<Message, Renderer> Connection<Message, Renderer>
@@ -35,7 +35,7 @@ where
 {
     pub fn new(from: Point, to: Point) -> Self {
         Connection {
-            scale: Mutex::new(1.0),
+            spline: Mutex::new(Vec::new()),
             from,
             to,
             width: 1.0,
@@ -75,18 +75,54 @@ where
         _limits: &iced_native::layout::Limits,
         scale: f32,
     ) -> iced_native::layout::Node {
-        let width = (self.from.x - self.to.x).abs().max(self.width);
-        let height = (self.from.y - self.to.y).abs().max(self.width);
+        let min_x = self.from.x.min(self.to.x);
+        let max_x = self.from.x.max(self.to.x);
+        let min_y = self.from.y.min(self.to.y);
+
+        let width = (max_x - min_x).max(self.width);
+
+        let from = Vector::new((self.from.x - min_x) * scale, (self.from.y - min_y) * scale);
+        let to = Vector::new((self.to.x - min_x) * scale, (self.to.y - min_y) * scale);
+
+        let control_scale = width.max(10.0_f32) * scale;
+
+        let spline = generate_spline(from, control_scale, to, self.number_of_segments, 0.5_f32);
+
+        let spline_min_x = spline
+            .iter()
+            .map(|p| p.x)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        let spline_min_y = spline
+            .iter()
+            .map(|p| p.y)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        let spline_max_x = spline
+            .iter()
+            .map(|p| p.x)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        let spline_max_y = spline
+            .iter()
+            .map(|p| p.y)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+
+        let spline = spline
+            .iter()
+            .map(|p| Vector::new(p.x - spline_min_x, p.y - spline_min_y))
+            .collect();
 
         let node = iced_native::layout::Node::new(Size::new(
-            (width * scale).max(1.0),
-            (height * scale).max(1.0),
+            (spline_max_x - spline_min_x).max(1.0),
+            (spline_max_y - spline_min_y).max(1.0),
         ));
 
-        let mut self_state = self.scale.lock().expect("Could not lock mutex");
-        *self_state = scale;
+        let mut self_state = self.spline.lock().expect("Could not lock mutex");
+        *self_state = spline;
 
-        node.translate(Vector::new(self.from.x, self.from.y) * scale)
+        node.translate(Vector::new(min_x * scale + spline_min_x, min_y * scale + spline_min_y))
     }
 }
 
@@ -116,44 +152,7 @@ where
         let bounds = layout.bounds();
         let style = theme.appearance(&self.style);
 
-        let min_x = self.from.x.min(self.to.x);
-        let min_y = self.from.y.min(self.to.y);
-        let max_x = self.from.x.max(self.to.x);
-        let max_y = self.from.y.max(self.to.y);
-
-        let width = (max_x - min_x).max(self.width);
-        let height = (max_y - min_y).max(self.width);
-
-        let from = Vector::new(
-            (self.from.x - min_x) / width * bounds.width,
-            (self.from.y - min_y) / height * bounds.height,
-        );
-        let to = Vector::new(
-            (self.to.x - min_x) / width * bounds.width,
-            (self.to.y - min_y) / height * bounds.height,
-        );
-
-        let control_scale = width.max(30.0_f32) * *self.scale.lock().unwrap();
-
-        let control_a = Vector {
-            x: from.x + control_scale,
-            y: from.y,
-        };
-        let control_b = Vector {
-            x: to.x - control_scale,
-            y: to.y,
-        };
-
-        let midpoint = (from + to) * 0.5_f32;
-
-        let mut spline = generate_spline(from, control_a, midpoint, self.number_of_segments);
-        spline.extend(generate_spline(
-            midpoint,
-            control_b,
-            to,
-            self.number_of_segments,
-        ));
-
+        let spline = self.spline.lock().unwrap();
         let (vertices, indices) = line_to_polygon(&spline, self.width / 2.0);
 
         let mesh = Mesh2D {
@@ -231,32 +230,49 @@ fn normalize_vector(vector: Vector) -> Vector {
     }
 }
 
-fn spline(start: Vector, control: Vector, end: Vector, t: f32) -> Vector {
-    let u = 1.0_f32 - t;
-    let tt = t * t;
-    let uu = u * u;
-    let uuu = uu * u;
-    let ttt = tt * t;
-
-    let a = start * uuu;
-    let b = control * uu * t * 3.0_f32;
-    let c = end * u * tt * 3.0_f32;
-    let d = end * ttt;
-
-    a + b + c + d
+fn dot_vector(vector: Vector, other: Vector) -> f32 {
+    vector.x * other.x + vector.y * other.y
 }
 
-fn generate_spline(
-    start: Vector,
-    control: Vector,
-    end: Vector,
-    num_segments: usize,
-) -> Vec<Vector> {
-    let mut spline_points = vec![];
+fn generate_spline(from: Vector, control_scale: f32, to: Vector, number_of_segments: usize, alpha: f32) -> Vec<Vector> {
+    let mut spline = Vec::new();
 
-    for i in 0..=num_segments {
-        spline_points.push(spline(start, control, end, i as f32 / num_segments as f32));
+    for i in 0..number_of_segments {
+        let t = i as f32 / (number_of_segments - 1) as f32;
+        let p = catmull_rom(
+            Vector::new(from.x - control_scale, from.y),
+            from,
+            to,
+            Vector::new(to.x + control_scale, to.y),
+            t,
+            alpha,
+        );
+        spline.push(p);
     }
 
-    spline_points
+    spline
+}
+
+// Code taken and adapted from https://en.wikipedia.org/wiki/Centripetal_Catmull%E2%80%93Rom_spline
+fn get_t(t: f32, alpha: f32, p0: Vector, p1: Vector) -> f32 {
+    let d = p1 - p0;
+    let a = dot_vector(d, d);
+    let b = a.powf(alpha * 0.5);
+    b + t
+}
+
+fn catmull_rom(p0: Vector, p1: Vector, p2: Vector, p3: Vector, t: f32, alpha: f32) -> Vector {
+    let t0 = 0.0;
+    let t1 = get_t(t0, alpha, p0, p1);
+    let t2 = get_t(t1, alpha, p1, p2);
+    let t3 = get_t(t2, alpha, p2, p3);
+    let t = t1 + (t2 - t1) * t;
+    let a1 = p0 * ((t1 - t) / (t1 - t0)) + p1 *((t - t0) / (t1 - t0));
+    let a2 = p1 * ((t2 - t) / (t2 - t1)) + p2 *((t - t1) / (t2 - t1));
+    let a3 = p2 * ((t3 - t) / (t3 - t2)) + p3 *((t - t2) / (t3 - t2));
+    let b1 = a1 * ((t2 - t) / (t2 - t0)) + a2 *((t - t0) / (t2 - t0));
+    let b2 = a2 * ((t3 - t) / (t3 - t1)) + a3 *((t - t1) / (t3 - t1));
+    let c = b1 * ((t2 - t) / (t2 - t1)) + b2 *((t - t1) / (t2 - t1));
+
+    c
 }

@@ -242,6 +242,7 @@ where
             match event {
                 Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                     state.drag_start_position = Some(cursor_position);
+                    status = event::Status::Captured;
                 }
                 Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                     if let Some(f) = &self.on_scale {
@@ -255,6 +256,7 @@ where
                                 shell.publish(message);
                             }
                         }
+                        status = event::Status::Captured;
                     }
                 }
                 _ => {}

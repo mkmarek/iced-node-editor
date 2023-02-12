@@ -10,7 +10,7 @@ A node editor for [Iced](https://github.com/iced-rs/iced) GUI library. Supports 
 - [x] Connections
 - [x] Panning
 - [x] Zooming
-- [ ] Dragging nodes
+- [x] Dragging nodes
 
 ## Usage
 

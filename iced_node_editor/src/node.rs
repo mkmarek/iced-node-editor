@@ -1,7 +1,8 @@
 use iced::{
-    alignment, Alignment, Background, Color, Element, Length, Padding, Point, Size, Vector,
+    alignment, event, mouse, Alignment, Background, Color, Element, Event, Length, Padding, Point,
+    Rectangle, Size, Vector,
 };
-use iced_native::{renderer, Widget};
+use iced_native::{renderer, widget, Clipboard, Layout, Shell, Widget};
 
 use crate::{
     node_element::{GraphNodeElement, ScalableWidget},
@@ -23,6 +24,11 @@ where
     position: Point,
     horizontal_alignment: alignment::Horizontal,
     vertical_alignment: alignment::Vertical,
+    on_translate: Option<Box<dyn Fn((f32, f32)) -> Message + 'a>>,
+}
+
+struct NodeState {
+    drag_start_position: Option<Point>,
 }
 
 impl<'a, Message, Renderer> Node<'a, Message, Renderer>
@@ -45,7 +51,16 @@ where
             position: Point::new(0.0, 0.0),
             horizontal_alignment: alignment::Horizontal::Left,
             vertical_alignment: alignment::Vertical::Top,
+            on_translate: None,
         }
+    }
+
+    pub fn on_translate<F>(mut self, f: F) -> Self
+    where
+        F: 'a + Fn((f32, f32)) -> Message,
+    {
+        self.on_translate = Some(Box::new(f));
+        self
     }
 
     pub fn position(mut self, position: Point) -> Self {
@@ -167,6 +182,12 @@ where
         tree.diff_children(std::slice::from_ref(&self.content))
     }
 
+    fn state(&self) -> widget::tree::State {
+        widget::tree::State::new(NodeState {
+            drag_start_position: None,
+        })
+    }
+
     fn layout(
         &self,
         _renderer: &Renderer,
@@ -213,6 +234,77 @@ where
             cursor_position,
             viewport,
         );
+    }
+
+    fn on_event(
+        &mut self,
+        tree: &mut widget::Tree,
+        event: Event,
+        layout: Layout<'_>,
+        cursor_position: Point,
+        renderer: &Renderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Message>,
+    ) -> event::Status {
+        let mut status = event::Status::Ignored;
+        let mut state = tree.state.downcast_mut::<NodeState>();
+
+        if let Some(start) = state.drag_start_position {
+            match event {
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                    state.drag_start_position = None;
+                }
+                Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                    let delta = cursor_position - start;
+                    state.drag_start_position = Some(cursor_position);
+                    if let Some(f) = &self.on_translate {
+                        let message = f((delta.x, delta.y));
+                        shell.publish(message);
+                    }
+                    status = event::Status::Captured;
+                }
+                _ => {}
+            }
+        } else {
+            status = self.content.as_widget_mut().on_event(
+                &mut tree.children[0],
+                event.clone(),
+                layout,
+                cursor_position,
+                renderer,
+                clipboard,
+                shell,
+            )
+        }
+
+        if status == event::Status::Ignored && layout.bounds().contains(cursor_position) {
+            match event {
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                    state.drag_start_position = Some(cursor_position);
+                    status = event::Status::Captured;
+                }
+                _ => {}
+            }
+        }
+
+        status
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &widget::Tree,
+        layout: Layout<'_>,
+        cursor_position: Point,
+        viewport: &Rectangle,
+        renderer: &Renderer,
+    ) -> mouse::Interaction {
+        self.content.as_widget().mouse_interaction(
+            &tree.children[0],
+            layout,
+            cursor_position,
+            viewport,
+            renderer,
+        )
     }
 
     fn width(&self) -> Length {
