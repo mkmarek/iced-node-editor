@@ -108,7 +108,6 @@ where
         _viewport: &iced::Rectangle,
     ) {
         let bounds = layout.bounds();
-
         let style = theme.appearance(&self.style);
 
         let min_x = self.from.x.min(self.to.x);

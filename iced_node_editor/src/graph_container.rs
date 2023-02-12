@@ -304,7 +304,7 @@ where
         let bounds = layout.bounds();
 
         renderer.with_layer(bounds, |renderer| {
-            draw_background(renderer, layout, style);
+            draw_background(renderer, bounds, style);
 
             let offset = self.matrix.get_translation();
             let scale = self.matrix.get_scale();
@@ -377,13 +377,13 @@ where
     }
 }
 
-fn draw_background<'a, Renderer>(renderer: &mut Renderer, layout: Layout<'_>, style: Appearance)
+fn draw_background<'a, Renderer>(renderer: &mut Renderer, bounds: Rectangle, style: Appearance)
 where
     Renderer: renderer::Renderer,
 {
     renderer.fill_quad(
         renderer::Quad {
-            bounds: layout.bounds(),
+            bounds,
             border_radius: [0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32].into(),
             border_width: 0.0_f32,
             border_color: Color::BLACK,

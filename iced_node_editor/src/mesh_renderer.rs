@@ -25,8 +25,8 @@ where
             });
 
         let size = iced_graphics::Size::new(max.x - min.x, max.y - min.y);
-
-        if size.width > 0.0 && size.height > 0.0 {
+        
+        if size.width >= 1.0 && size.height >= 1.0 {
             self.draw_primitive(iced_graphics::Primitive::SolidMesh { buffers: mesh, size });
         }
     }
