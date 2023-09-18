@@ -1,11 +1,8 @@
 use std::sync::Mutex;
 
-use iced::{Length, Point, Size, Vector};
-use iced_graphics::triangle::{ColoredVertex2D, Mesh2D};
-use iced_native::{
-    renderer::{self},
-    Widget,
-};
+use iced::advanced::graphics::mesh::{Indexed, SolidVertex2D};
+use iced::advanced::renderer;
+use iced::{advanced::Widget, Length, Point, Size, Vector};
 
 use crate::{
     mesh_renderer::MeshRenderer,
@@ -72,9 +69,9 @@ where
     fn layout(
         &self,
         _renderer: &Renderer,
-        _limits: &iced_native::layout::Limits,
+        _limits: &iced::advanced::layout::Limits,
         scale: f32,
-    ) -> iced_native::layout::Node {
+    ) -> iced::advanced::layout::Node {
         let spline = generate_spline(
             Vector::new(self.from.x, self.from.y) * scale,
             1.0,
@@ -90,7 +87,7 @@ where
             .map(|p| Vector::new(p.x - spline_bounds.x, p.y - spline_bounds.y))
             .collect();
 
-        let node = iced_native::layout::Node::new(Size::new(
+        let node = iced::advanced::layout::Node::new(Size::new(
             (spline_bounds.width + self.width).ceil(),
             (spline_bounds.height + self.width).ceil(),
         ));
@@ -110,19 +107,19 @@ where
     fn layout(
         &self,
         _renderer: &Renderer,
-        _limits: &iced_native::layout::Limits,
-    ) -> iced_native::layout::Node {
+        _limits: &iced::advanced::layout::Limits,
+    ) -> iced::advanced::layout::Node {
         todo!("This should never be called.")
     }
 
     fn draw(
         &self,
-        _tree: &iced_native::widget::Tree,
+        _tree: &iced::advanced::widget::Tree,
         renderer: &mut Renderer,
-        theme: &<Renderer as iced_native::Renderer>::Theme,
+        theme: &<Renderer as iced::advanced::Renderer>::Theme,
         _renderer_style: &renderer::Style,
-        layout: iced_native::Layout<'_>,
-        _cursor_position: iced::Point,
+        layout: iced::advanced::Layout<'_>,
+        _cursor: iced::mouse::Cursor,
         _viewport: &iced::Rectangle,
     ) {
         let bounds = layout.bounds();
@@ -131,28 +128,28 @@ where
         let spline = self.spline.lock().unwrap();
         let (vertices, indices) = line_to_polygon(&spline, self.width / 2.0);
 
-        let mesh = Mesh2D {
+        let buffers = Indexed {
             vertices: vertices
                 .iter()
-                .map(|p| ColoredVertex2D {
+                .map(|p| SolidVertex2D {
                     position: [p.x, p.y],
-                    color: style.color.unwrap().into_linear(),
+                    color: iced::advanced::graphics::color::pack(style.color.unwrap()),
                 })
                 .collect(),
             indices,
         };
 
         renderer.with_translation(Vector::new(bounds.x, bounds.y), |renderer| {
-            renderer.draw_mesh(mesh);
+            renderer.draw_buffers(buffers);
         });
     }
 
     fn width(&self) -> Length {
-        Length::Units(((self.from.x - self.to.x).abs() + self.width).ceil() as u16)
+        Length::Fixed((self.from.x - self.to.x).abs() + self.width)
     }
 
     fn height(&self) -> Length {
-        Length::Units(((self.from.y - self.to.y).abs() + self.width).ceil() as u16)
+        Length::Fixed((self.from.y - self.to.y).abs() + self.width)
     }
 }
 

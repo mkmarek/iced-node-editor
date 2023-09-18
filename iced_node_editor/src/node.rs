@@ -1,8 +1,8 @@
+use iced::advanced::{renderer, widget, Clipboard, Layout, Shell, Widget};
 use iced::{
     alignment, event, mouse, Alignment, Background, Color, Element, Event, Length, Padding, Point,
     Rectangle, Size, Vector,
 };
-use iced_native::{renderer, widget, Clipboard, Layout, Shell, Widget};
 
 use crate::{
     node_element::{GraphNodeElement, ScalableWidget},
@@ -16,8 +16,8 @@ where
 {
     width: Length,
     height: Length,
-    max_width: u32,
-    max_height: u32,
+    max_width: f32,
+    max_height: f32,
     padding: Padding,
     style: <Renderer::Theme as StyleSheet>::Style,
     content: Element<'a, Message, Renderer>,
@@ -43,8 +43,8 @@ where
         Node {
             width: Length::Shrink,
             height: Length::Shrink,
-            max_width: u32::MAX,
-            max_height: u32::MAX,
+            max_width: f32::MAX,
+            max_height: f32::MAX,
             padding: Padding::ZERO,
             style: Default::default(),
             content: content.into(),
@@ -83,12 +83,12 @@ where
         self
     }
 
-    pub fn max_width(mut self, max_width: u32) -> Self {
+    pub fn max_width(mut self, max_width: f32) -> Self {
         self.max_width = max_width;
         self
     }
 
-    pub fn max_height(mut self, max_height: u32) -> Self {
+    pub fn max_height(mut self, max_height: f32) -> Self {
         self.max_height = max_height;
         self
     }
@@ -137,9 +137,9 @@ where
     fn layout(
         &self,
         renderer: &Renderer,
-        limits: &iced_native::layout::Limits,
+        limits: &iced::advanced::layout::Limits,
         scale: f32,
-    ) -> iced_native::layout::Node {
+    ) -> iced::advanced::layout::Node {
         let limits = limits
             .loose()
             .max_width(self.max_width)
@@ -163,7 +163,7 @@ where
             size,
         );
 
-        let node = iced_native::layout::Node::with_children(size, vec![content]);
+        let node = iced::advanced::layout::Node::with_children(size, vec![content]);
 
         node.translate(Vector::new(self.position.x, self.position.y) * scale)
     }
@@ -174,11 +174,11 @@ where
     Renderer: renderer::Renderer,
     Renderer::Theme: StyleSheet,
 {
-    fn children(&self) -> Vec<iced_native::widget::Tree> {
-        vec![iced_native::widget::Tree::new(&self.content)]
+    fn children(&self) -> Vec<iced::advanced::widget::Tree> {
+        vec![iced::advanced::widget::Tree::new(&self.content)]
     }
 
-    fn diff(&self, tree: &mut iced_native::widget::Tree) {
+    fn diff(&self, tree: &mut iced::advanced::widget::Tree) {
         tree.diff_children(std::slice::from_ref(&self.content))
     }
 
@@ -191,19 +191,19 @@ where
     fn layout(
         &self,
         _renderer: &Renderer,
-        _limits: &iced_native::layout::Limits,
-    ) -> iced_native::layout::Node {
+        _limits: &iced::advanced::layout::Limits,
+    ) -> iced::advanced::layout::Node {
         todo!("This should never be called.")
     }
 
     fn draw(
         &self,
-        tree: &iced_native::widget::Tree,
+        tree: &iced::advanced::widget::Tree,
         renderer: &mut Renderer,
-        theme: &<Renderer as iced_native::Renderer>::Theme,
+        theme: &<Renderer as iced::advanced::Renderer>::Theme,
         renderer_style: &renderer::Style,
-        layout: iced_native::Layout<'_>,
-        cursor_position: iced::Point,
+        layout: iced::advanced::Layout<'_>,
+        cursor: iced::advanced::mouse::Cursor,
         viewport: &iced::Rectangle,
     ) {
         let style = theme.appearance(&self.style);
@@ -231,7 +231,7 @@ where
                 text_color: style.text_color.unwrap_or(renderer_style.text_color),
             },
             layout.children().next().unwrap(),
-            cursor_position,
+            cursor,
             viewport,
         );
     }
@@ -241,49 +241,55 @@ where
         tree: &mut widget::Tree,
         event: Event,
         layout: Layout<'_>,
-        cursor_position: Point,
+        cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
+        viewport: &Rectangle<f32>,
     ) -> event::Status {
         let mut status = event::Status::Ignored;
         let mut state = tree.state.downcast_mut::<NodeState>();
 
-        if let Some(start) = state.drag_start_position {
-            match event {
-                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                    state.drag_start_position = None;
-                }
-                Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                    let delta = cursor_position - start;
-                    state.drag_start_position = Some(cursor_position);
-                    if let Some(f) = &self.on_translate {
-                        let message = f((delta.x, delta.y));
-                        shell.publish(message);
+        if let Some(cursor_position) = cursor.position() {
+            if let Some(start) = state.drag_start_position {
+                match event {
+                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                        state.drag_start_position = None;
                     }
-                    status = event::Status::Captured;
+                    Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                        let delta = cursor_position - start;
+                        state.drag_start_position = Some(cursor_position);
+                        if let Some(f) = &self.on_translate {
+                            let message = f((delta.x, delta.y));
+                            shell.publish(message);
+                        }
+                        status = event::Status::Captured;
+                    }
+                    _ => {}
                 }
-                _ => {}
+            } else {
+                status = self.content.as_widget_mut().on_event(
+                    &mut tree.children[0],
+                    event.clone(),
+                    layout,
+                    cursor,
+                    renderer,
+                    clipboard,
+                    shell,
+                    viewport,
+                )
             }
-        } else {
-            status = self.content.as_widget_mut().on_event(
-                &mut tree.children[0],
-                event.clone(),
-                layout,
-                cursor_position,
-                renderer,
-                clipboard,
-                shell,
-            )
         }
 
-        if status == event::Status::Ignored && layout.bounds().contains(cursor_position) {
-            match event {
-                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                    state.drag_start_position = Some(cursor_position);
-                    status = event::Status::Captured;
+        if let Some(cursor_position) = cursor.position() {
+            if status == event::Status::Ignored && layout.bounds().contains(cursor_position) {
+                match event {
+                    Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                        state.drag_start_position = Some(cursor_position);
+                        status = event::Status::Captured;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
 
@@ -294,14 +300,14 @@ where
         &self,
         tree: &widget::Tree,
         layout: Layout<'_>,
-        cursor_position: Point,
+        cursor: mouse::Cursor,
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
         self.content.as_widget().mouse_interaction(
             &tree.children[0],
             layout,
-            cursor_position,
+            cursor,
             viewport,
             renderer,
         )

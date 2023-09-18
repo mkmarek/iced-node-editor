@@ -109,8 +109,8 @@ impl Sandbox for Example {
                     .center_x()
                     .center_y()
                     .on_translate(move |p| Message::MoveNode(i, p.0, p.1))
-                    .width(Length::Units(200))
-                    .height(Length::Units(75))
+                    .width(Length::Fixed(200.0))
+                    .height(Length::Fixed(75.0))
                     .position(n.position)
                     .into(),
             );
