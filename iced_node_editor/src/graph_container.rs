@@ -137,6 +137,10 @@ where
         self.height
     }
 
+    fn tag(&self) -> widget::tree::Tag {
+        widget::tree::Tag::of::<widget::tree::State>()
+    }
+    
     fn state(&self) -> widget::tree::State {
         widget::tree::State::new(GraphContainerState {
             drag_start_position: None,
