@@ -1,5 +1,5 @@
 use iced::{Background, Color, Theme};
-use palette::{Hsl, Srgb, FromColor, Shade};
+use palette::{Darken, FromColor, Hsl, Lighten, Srgb};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Appearance {

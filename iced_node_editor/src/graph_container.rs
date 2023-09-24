@@ -1,11 +1,11 @@
 use iced::{
+    advanced::{
+        layout,
+        renderer::{self},
+        widget::{self, Operation},
+        Clipboard, Layout, Shell, Widget,
+    },
     event, mouse, Background, Color, Element, Event, Length, Point, Rectangle, Size, Vector,
-};
-use iced_native::{
-    layout,
-    renderer::{self},
-    widget::{self, Operation},
-    Clipboard, Layout, Shell, Widget,
 };
 
 use crate::{
@@ -21,8 +21,8 @@ where
 {
     width: Length,
     height: Length,
-    max_width: u32,
-    max_height: u32,
+    max_width: f32,
+    max_height: f32,
     style: <Renderer::Theme as StyleSheet>::Style,
     content: Vec<GraphNodeElement<'a, Message, Renderer>>,
     matrix: Matrix,
@@ -39,16 +39,15 @@ where
     Renderer: renderer::Renderer,
     Renderer::Theme: StyleSheet,
 {
-    pub fn new(content: Vec<GraphNodeElement<'a, Message, Renderer>>) -> Self
-    {
+    pub fn new(content: Vec<GraphNodeElement<'a, Message, Renderer>>) -> Self {
         GraphContainer {
             on_translate: None,
             on_scale: None,
             matrix: Matrix::identity(),
             width: Length::Shrink,
             height: Length::Shrink,
-            max_width: u32::MAX,
-            max_height: u32::MAX,
+            max_width: f32::MAX,
+            max_height: f32::MAX,
             style: Default::default(),
             content,
         }
@@ -85,12 +84,12 @@ where
         self
     }
 
-    pub fn max_width(mut self, max_width: u32) -> Self {
+    pub fn max_width(mut self, max_width: f32) -> Self {
         self.max_width = max_width;
         self
     }
 
-    pub fn max_height(mut self, max_height: u32) -> Self {
+    pub fn max_height(mut self, max_height: f32) -> Self {
         self.max_height = max_height;
         self
     }
@@ -138,6 +137,10 @@ where
         self.height
     }
 
+    fn tag(&self) -> widget::tree::Tag {
+        widget::tree::Tag::of::<widget::tree::State>()
+    }
+    
     fn state(&self) -> widget::tree::State {
         widget::tree::State::new(GraphContainerState {
             drag_start_position: None,
@@ -176,7 +179,7 @@ where
         renderer: &Renderer,
         operation: &mut dyn Operation<Message>,
     ) {
-        operation.container(None, &mut |operation| {
+        operation.container(None, layout.bounds(), &mut |operation| {
             self.content
                 .iter()
                 .zip(&mut tree.children)
@@ -194,29 +197,32 @@ where
         tree: &mut widget::Tree,
         event: Event,
         layout: Layout<'_>,
-        cursor_position: Point,
+        cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
+        viewport: &Rectangle<f32>,
     ) -> event::Status {
         let mut status = event::Status::Ignored;
         let mut state = tree.state.downcast_mut::<GraphContainerState>();
 
         if let Some(start) = state.drag_start_position {
-            match event {
-                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                    state.drag_start_position = None;
-                }
-                Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                    let delta = cursor_position - start;
-                    state.drag_start_position = Some(cursor_position);
-                    if let Some(f) = &self.on_translate {
-                        let message = f((delta.x, delta.y));
-                        shell.publish(message);
+            if let Some(cursor_position) = cursor.position() {
+                match event {
+                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                        state.drag_start_position = None;
                     }
-                    status = event::Status::Captured;
+                    Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                        let delta = cursor_position - start;
+                        state.drag_start_position = Some(cursor_position);
+                        if let Some(f) = &self.on_translate {
+                            let message = f((delta.x, delta.y));
+                            shell.publish(message);
+                        }
+                        status = event::Status::Captured;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         } else {
             status = self
@@ -229,37 +235,40 @@ where
                         state,
                         event.clone(),
                         layout,
-                        cursor_position,
+                        cursor,
                         renderer,
                         clipboard,
                         shell,
+                        viewport,
                     )
                 })
                 .fold(event::Status::Ignored, event::Status::merge);
         }
 
         if status == event::Status::Ignored {
-            match event {
-                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                    state.drag_start_position = Some(cursor_position);
-                    status = event::Status::Captured;
-                }
-                Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                    if let Some(f) = &self.on_scale {
-                        match delta {
-                            mouse::ScrollDelta::Lines { y, .. } => {
-                                let message = f(cursor_position.x, cursor_position.y, y);
-                                shell.publish(message);
-                            }
-                            mouse::ScrollDelta::Pixels { y, .. } => {
-                                let message = f(cursor_position.x, cursor_position.y, y);
-                                shell.publish(message);
-                            }
-                        }
+            if let Some(cursor_position) = cursor.position() {
+                match event {
+                    Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                        state.drag_start_position = Some(cursor_position);
                         status = event::Status::Captured;
                     }
+                    Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                        if let Some(f) = &self.on_scale {
+                            match delta {
+                                mouse::ScrollDelta::Lines { y, .. } => {
+                                    let message = f(cursor_position.x, cursor_position.y, y);
+                                    shell.publish(message);
+                                }
+                                mouse::ScrollDelta::Pixels { y, .. } => {
+                                    let message = f(cursor_position.x, cursor_position.y, y);
+                                    shell.publish(message);
+                                }
+                            }
+                            status = event::Status::Captured;
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
 
@@ -270,7 +279,7 @@ where
         &self,
         tree: &widget::Tree,
         layout: Layout<'_>,
-        cursor_position: Point,
+        cursor: mouse::Cursor,
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
@@ -279,13 +288,9 @@ where
             .zip(&tree.children)
             .zip(layout.children())
             .map(|((child, state), layout)| {
-                child.as_widget().mouse_interaction(
-                    state,
-                    layout,
-                    cursor_position,
-                    viewport,
-                    renderer,
-                )
+                child
+                    .as_widget()
+                    .mouse_interaction(state, layout, cursor, viewport, renderer)
             })
             .max()
             .unwrap_or_default()
@@ -298,7 +303,7 @@ where
         theme: &Renderer::Theme,
         renderer_style: &renderer::Style,
         layout: Layout<'_>,
-        cursor_position: Point,
+        cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
         let style = theme.appearance(&self.style);
@@ -372,7 +377,7 @@ where
                     theme,
                     renderer_style,
                     layout,
-                    cursor_position,
+                    cursor,
                     &viewport,
                 );
             }

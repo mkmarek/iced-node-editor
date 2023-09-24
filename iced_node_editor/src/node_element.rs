@@ -1,4 +1,4 @@
-use iced_native::{renderer, Widget, layout};
+use iced::advanced::{layout, renderer, Widget};
 use std::borrow::Borrow;
 
 pub struct GraphNodeElement<'a, Message, Renderer> {
@@ -34,12 +34,7 @@ pub trait ScalableWidget<Message, Renderer>
 where
     Renderer: renderer::Renderer,
 {
-    fn layout(
-        &self,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-        scale: f32
-    ) -> layout::Node;
+    fn layout(&self, renderer: &Renderer, limits: &layout::Limits, scale: f32) -> layout::Node;
 }
 
 impl<'a, Message, Renderer> GraphNodeElement<'a, Message, Renderer>
