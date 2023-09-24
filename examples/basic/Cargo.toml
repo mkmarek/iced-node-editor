@@ -10,4 +10,4 @@ iced = "0.10.0"
 iced_node_editor = { path = "../../iced_node_editor"}
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = "0.3.61"
+web-sys = "0.3.64"
