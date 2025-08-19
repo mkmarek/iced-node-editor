@@ -1,16 +1,8 @@
 use iced::{Color, Theme};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Appearance {
     pub color: Option<Color>,
-}
-
-impl std::default::Default for Appearance {
-    fn default() -> Self {
-        Self {
-            color: None
-        }
-    }
 }
 
 pub trait StyleSheet {

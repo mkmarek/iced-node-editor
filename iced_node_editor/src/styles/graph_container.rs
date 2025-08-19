@@ -1,7 +1,7 @@
 use iced::{Background, Color, Theme};
 use palette::{Darken, FromColor, Hsl, Lighten, Srgb};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Appearance {
     pub background: Option<Background>,
     pub minor_guidelines_color: Option<Color>,
@@ -10,20 +10,6 @@ pub struct Appearance {
     pub minor_guidelines_spacing: Option<f32>,
     pub mid_guidelines_spacing: Option<f32>,
     pub major_guidelines_spacing: Option<f32>,
-}
-
-impl std::default::Default for Appearance {
-    fn default() -> Self {
-        Self {
-            background: None,
-            minor_guidelines_color: None,
-            mid_guidelines_color: None,
-            major_guidelines_color: None,
-            minor_guidelines_spacing: None,
-            mid_guidelines_spacing: None,
-            major_guidelines_spacing: None,
-        }
-    }
 }
 
 pub trait StyleSheet {

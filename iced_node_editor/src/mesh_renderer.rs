@@ -1,11 +1,14 @@
-use iced::advanced::graphics::mesh::{Indexed, SolidVertex2D};
-use iced::{Point, Size};
+use iced::advanced::graphics::mesh::{self, Indexed, SolidVertex2D};
+use iced::{Point, Rectangle, Size, Transformation};
 
 pub trait MeshRenderer {
     fn draw_buffers(&mut self, buffers: Indexed<SolidVertex2D>);
 }
 
-impl<Theme> MeshRenderer for iced::Renderer<Theme> {
+impl<T> MeshRenderer for T
+where
+    T: mesh::Renderer,
+{
     fn draw_buffers(&mut self, buffers: Indexed<SolidVertex2D>) {
         let min = buffers
             .vertices
@@ -24,7 +27,11 @@ impl<Theme> MeshRenderer for iced::Renderer<Theme> {
         let size = Size::new(max.x - min.x, max.y - min.y);
 
         if size.width >= 1.0 && size.height >= 1.0 {
-            self.draw_mesh(iced::advanced::graphics::Mesh::Solid { buffers, size });
+            self.draw_mesh(mesh::Mesh::Solid {
+                buffers,
+                transformation: Transformation::IDENTITY,
+                clip_bounds: Rectangle::new(min, size.max((2.0, 2.0).into())),
+            });
         }
     }
 }

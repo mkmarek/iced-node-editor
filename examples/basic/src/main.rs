@@ -1,34 +1,11 @@
 use iced::widget::{container, text};
-use iced::{Element, Length, Point, Sandbox, Settings};
+use iced::{Element, Length, Point};
 use iced_node_editor::{connection, graph_container, node, Matrix};
 
 pub fn main() -> iced::Result {
-    // To resize the the resulting canvas for web: https://github.com/iced-rs/iced/issues/1265
-    #[cfg(target_arch = "wasm32")]
-    {
-        let window = web_sys::window().unwrap();
-        let (width, height) = (
-            (window.inner_width().unwrap().as_f64().unwrap()) as u32,
-            (window.inner_height().unwrap().as_f64().unwrap()) as u32,
-        );
-
-        Example::run(Settings {
-            window: iced::window::Settings {
-                size: (width, height),
-                ..Default::default()
-            },
-            ..Default::default()
-        })?;
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    Example::run(Settings {
-        window: iced::window::Settings {
-            size: (800, 600),
-            ..Default::default()
-        },
-        ..Default::default()
-    })?;
+    iced::application(Example::title, Example::update, Example::view)
+        .theme(Example::theme)
+        .run()?;
 
     Ok(())
 }
@@ -44,6 +21,12 @@ struct Example {
     connections: Vec<(usize, usize)>,
 }
 
+impl Default for Example {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Message {
     ScaleChanged(f32, f32, f32),
@@ -51,11 +34,9 @@ enum Message {
     MoveNode(usize, f32, f32),
 }
 
-impl Sandbox for Example {
-    type Message = Message;
-
+impl Example {
     fn new() -> Self {
-        Example {
+        Self {
             matrix: Matrix::identity(),
             nodes: vec![
                 NodeState {
@@ -94,8 +75,10 @@ impl Sandbox for Example {
             }
             Message::TranslationChanged(x, y) => self.matrix = self.matrix.translate(x, y),
             Message::MoveNode(i, x, y) => {
-                self.nodes[i].position =
-                    Point::new(self.nodes[i].position.x + x / self.matrix.get_scale(), self.nodes[i].position.y + y / self.matrix.get_scale());
+                self.nodes[i].position = Point::new(
+                    self.nodes[i].position.x + x / self.matrix.get_scale(),
+                    self.nodes[i].position.y + y / self.matrix.get_scale(),
+                );
             }
         }
     }
@@ -116,7 +99,7 @@ impl Sandbox for Example {
             );
         }
 
-        for (_i, c) in self.connections.iter().enumerate() {
+        for c in self.connections.iter() {
             graph_content.push(
                 connection(
                     Point::new(
@@ -135,7 +118,7 @@ impl Sandbox for Example {
         container(
             graph_container(graph_content)
                 .on_translate(|p| Message::TranslationChanged(p.0, p.1))
-                .on_scale(|x, y, s| Message::ScaleChanged(x, y, s))
+                .on_scale(Message::ScaleChanged)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .matrix(self.matrix),

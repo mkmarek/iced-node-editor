@@ -1,7 +1,9 @@
 use std::sync::Mutex;
 
 use iced::advanced::graphics::mesh::{Indexed, SolidVertex2D};
+use iced::advanced::layout::Limits;
 use iced::advanced::renderer;
+use iced::advanced::widget::Tree;
 use iced::{advanced::Widget, Length, Point, Size, Vector};
 
 use crate::{
@@ -10,26 +12,18 @@ use crate::{
     styles::connection::StyleSheet,
 };
 
-pub struct Connection<Message, Renderer>
-where
-    Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
-{
+pub struct Connection<Message> {
     from: Point,
     to: Point,
     width: f32,
     number_of_segments: usize,
-    style: <Renderer::Theme as StyleSheet>::Style,
+    style: <iced::Theme as StyleSheet>::Style,
 
     phantom_message: std::marker::PhantomData<Message>,
     spline: Mutex<Vec<Vector>>,
 }
 
-impl<Message, Renderer> Connection<Message, Renderer>
-where
-    Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
-{
+impl<Message> Connection<Message> {
     pub fn new(from: Point, to: Point) -> Self {
         Connection {
             spline: Mutex::new(Vec::new()),
@@ -53,23 +47,19 @@ where
     }
 }
 
-pub fn connection<'a, Message, Renderer>(from: Point, to: Point) -> Connection<Message, Renderer>
-where
-    Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
-{
+pub fn connection<Message>(from: Point, to: Point) -> Connection<Message> {
     Connection::new(from, to)
 }
 
-impl<'a, Message, Renderer> ScalableWidget<Message, Renderer> for Connection<Message, Renderer>
+impl<Theme, Message, Renderer> ScalableWidget<Message, Theme, Renderer> for Connection<Message>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
 {
     fn layout(
         &self,
+        _tree: &mut Tree,
         _renderer: &Renderer,
-        _limits: &iced::advanced::layout::Limits,
+        _limits: &Limits,
         scale: f32,
     ) -> iced::advanced::layout::Node {
         let spline = generate_spline(
@@ -99,24 +89,25 @@ where
     }
 }
 
-impl<'a, Message, Renderer> Widget<Message, Renderer> for Connection<Message, Renderer>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Connection<Message>
 where
     Renderer: renderer::Renderer + MeshRenderer,
-    Renderer::Theme: StyleSheet,
+    Theme: StyleSheet<Style = <iced::Theme as StyleSheet>::Style>,
 {
     fn layout(
         &self,
+        _tree: &mut Tree,
         _renderer: &Renderer,
-        _limits: &iced::advanced::layout::Limits,
+        _limits: &Limits,
     ) -> iced::advanced::layout::Node {
         todo!("This should never be called.")
     }
 
     fn draw(
         &self,
-        _tree: &iced::advanced::widget::Tree,
+        _tree: &Tree,
         renderer: &mut Renderer,
-        theme: &<Renderer as iced::advanced::Renderer>::Theme,
+        theme: &Theme,
         _renderer_style: &renderer::Style,
         layout: iced::advanced::Layout<'_>,
         _cursor: iced::mouse::Cursor,
@@ -144,23 +135,22 @@ where
         });
     }
 
-    fn width(&self) -> Length {
-        Length::Fixed((self.from.x - self.to.x).abs() + self.width)
-    }
-
-    fn height(&self) -> Length {
-        Length::Fixed((self.from.y - self.to.y).abs() + self.width)
+    fn size(&self) -> Size<Length> {
+        Size::new(
+            Length::Fixed((self.from.x - self.to.x).abs() + self.width),
+            Length::Fixed((self.from.y - self.to.y).abs() + self.width),
+        )
     }
 }
 
-impl<'a, Message, Renderer> From<Connection<Message, Renderer>>
-    for GraphNodeElement<'a, Message, Renderer>
+impl<'a, Message, Theme, Renderer> From<Connection<Message>>
+    for GraphNodeElement<'a, Message, Theme, Renderer>
 where
     Message: 'a,
     Renderer: renderer::Renderer + MeshRenderer + 'a,
-    Renderer::Theme: StyleSheet,
+    Theme: StyleSheet<Style = <iced::Theme as StyleSheet>::Style>,
 {
-    fn from(node: Connection<Message, Renderer>) -> Self {
+    fn from(node: Connection<Message>) -> Self {
         Self::new(node)
     }
 }
@@ -251,9 +241,8 @@ fn catmull_rom(p0: Vector, p1: Vector, p2: Vector, p3: Vector, t: f32, alpha: f3
     let a3 = p2 * ((t3 - t) / (t3 - t2)) + p3 * ((t - t2) / (t3 - t2));
     let b1 = a1 * ((t2 - t) / (t2 - t0)) + a2 * ((t - t0) / (t2 - t0));
     let b2 = a2 * ((t3 - t) / (t3 - t1)) + a3 * ((t - t1) / (t3 - t1));
-    let c = b1 * ((t2 - t) / (t2 - t1)) + b2 * ((t - t1) / (t2 - t1));
 
-    c
+    b1 * ((t2 - t) / (t2 - t1)) + b2 * ((t - t1) / (t2 - t1))
 }
 
 fn bounds_for_vectors(points: &[Vector]) -> iced::Rectangle {

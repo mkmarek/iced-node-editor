@@ -1,7 +1,10 @@
+use iced::advanced::layout::Limits;
+use iced::advanced::widget::tree::State;
+use iced::advanced::widget::Tree;
 use iced::advanced::{renderer, widget, Clipboard, Layout, Shell, Widget};
 use iced::{
-    alignment, event, mouse, Alignment, Background, Color, Element, Event, Length, Padding, Point,
-    Rectangle, Size, Vector,
+    alignment, event, mouse, Alignment, Background, Border, Color, Element, Event, Length, Padding,
+    Point, Rectangle, Shadow, Size, Vector,
 };
 
 use crate::{
@@ -9,36 +12,36 @@ use crate::{
     styles::node::StyleSheet,
 };
 
-pub struct Node<'a, Message, Renderer>
+type OnTranslateFn<'a, Message> = Box<dyn Fn((f32, f32)) -> Message + 'a>;
+
+pub struct Node<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
 {
     width: Length,
     height: Length,
     max_width: f32,
     max_height: f32,
     padding: Padding,
-    style: <Renderer::Theme as StyleSheet>::Style,
-    content: Element<'a, Message, Renderer>,
+    style: <iced::Theme as StyleSheet>::Style,
+    content: Element<'a, Message, Theme, Renderer>,
     position: Point,
     horizontal_alignment: alignment::Horizontal,
     vertical_alignment: alignment::Vertical,
-    on_translate: Option<Box<dyn Fn((f32, f32)) -> Message + 'a>>,
+    on_translate: Option<OnTranslateFn<'a, Message>>,
 }
 
 struct NodeState {
     drag_start_position: Option<Point>,
 }
 
-impl<'a, Message, Renderer> Node<'a, Message, Renderer>
+impl<'a, Message, Theme, Renderer> Node<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
 {
     pub fn new<T>(content: T) -> Self
     where
-        T: Into<Element<'a, Message, Renderer>>,
+        T: Into<Element<'a, Message, Theme, Renderer>>,
     {
         Node {
             width: Length::Shrink,
@@ -93,7 +96,7 @@ where
         self
     }
 
-    pub fn style(mut self, style: impl Into<<Renderer::Theme as StyleSheet>::Style>) -> Self {
+    pub fn style(mut self, style: impl Into<<iced::Theme as StyleSheet>::Style>) -> Self {
         self.style = style.into();
         self
     }
@@ -119,25 +122,25 @@ where
     }
 }
 
-pub fn node<'a, Message, Renderer>(
-    content: impl Into<Element<'a, Message, Renderer>>,
-) -> Node<'a, Message, Renderer>
+pub fn node<'a, Message, Theme, Renderer>(
+    content: impl Into<Element<'a, Message, Theme, Renderer>>,
+) -> Node<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
 {
     Node::new(content)
 }
 
-impl<'a, Message, Renderer> ScalableWidget<Message, Renderer> for Node<'a, Message, Renderer>
+impl<'a, Message, Theme, Renderer> ScalableWidget<Message, Theme, Renderer>
+    for Node<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
 {
     fn layout(
         &self,
+        tree: &mut Tree,
         renderer: &Renderer,
-        limits: &iced::advanced::layout::Limits,
+        limits: &Limits,
         scale: f32,
     ) -> iced::advanced::layout::Node {
         let limits = limits
@@ -147,21 +150,28 @@ where
             .width(self.width)
             .height(self.height);
 
-        let mut content = self
-            .content
-            .as_widget()
-            .layout(renderer, &limits.pad(self.padding).loose());
+        let content = self.content.as_widget().layout(
+            tree.children.first_mut().unwrap(),
+            renderer,
+            &limits
+                .shrink((self.padding.horizontal(), self.padding.vertical()))
+                .loose(),
+        );
 
         let padding = self.padding.fit(content.size(), limits.max());
-        let size = limits.pad(padding).resolve(content.size());
+        let size = limits
+            .shrink((padding.horizontal(), padding.vertical()))
+            .resolve(self.width, self.height, content.size());
+
         let size = Size::new(size.width * scale, size.height * scale);
 
-        content.move_to(Point::new(padding.left.into(), padding.top.into()));
-        content.align(
-            Alignment::from(self.horizontal_alignment),
-            Alignment::from(self.vertical_alignment),
-            size,
-        );
+        let content = content
+            .move_to(Point::new(padding.left, padding.top))
+            .align(
+                Alignment::from(self.horizontal_alignment),
+                Alignment::from(self.vertical_alignment),
+                size,
+            );
 
         let node = iced::advanced::layout::Node::with_children(size, vec![content]);
 
@@ -169,38 +179,44 @@ where
     }
 }
 
-impl<'a, Message, Renderer> Widget<Message, Renderer> for Node<'a, Message, Renderer>
+impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for Node<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
+    Theme: StyleSheet<Style = <iced::Theme as StyleSheet>::Style>,
 {
-    fn children(&self) -> Vec<iced::advanced::widget::Tree> {
+    fn children(&self) -> Vec<Tree> {
         vec![iced::advanced::widget::Tree::new(&self.content)]
     }
 
-    fn diff(&self, tree: &mut iced::advanced::widget::Tree) {
+    fn diff(&self, tree: &mut Tree) {
         tree.diff_children(std::slice::from_ref(&self.content))
     }
 
-    fn state(&self) -> widget::tree::State {
-        widget::tree::State::new(NodeState {
+    fn state(&self) -> State {
+        State::new(NodeState {
             drag_start_position: None,
         })
     }
 
+    fn tag(&self) -> widget::tree::Tag {
+        widget::tree::Tag::of::<widget::tree::State>()
+    }
+
     fn layout(
         &self,
+        _tree: &mut Tree,
         _renderer: &Renderer,
-        _limits: &iced::advanced::layout::Limits,
+        _limits: &Limits,
     ) -> iced::advanced::layout::Node {
         todo!("This should never be called.")
     }
 
     fn draw(
         &self,
-        tree: &iced::advanced::widget::Tree,
+        tree: &Tree,
         renderer: &mut Renderer,
-        theme: &<Renderer as iced::advanced::Renderer>::Theme,
+        theme: &Theme,
         renderer_style: &renderer::Style,
         layout: iced::advanced::Layout<'_>,
         cursor: iced::advanced::mouse::Cursor,
@@ -213,9 +229,16 @@ where
             renderer.fill_quad(
                 renderer::Quad {
                     bounds,
-                    border_radius: style.border_radius.into(),
-                    border_width: style.border_width,
-                    border_color: style.border_color,
+                    border: Border {
+                        color: style.border_color,
+                        width: style.border_width,
+                        radius: style.border_radius.into(),
+                    },
+                    shadow: Shadow {
+                        color: Color::TRANSPARENT,
+                        offset: Vector::ZERO,
+                        blur_radius: 0.0,
+                    },
                 },
                 style
                     .background
@@ -224,7 +247,7 @@ where
         }
 
         self.content.as_widget().draw(
-            tree,
+            tree.children.first().unwrap(),
             renderer,
             theme,
             &renderer::Style {
@@ -248,7 +271,7 @@ where
         viewport: &Rectangle<f32>,
     ) -> event::Status {
         let mut status = event::Status::Ignored;
-        let mut state = tree.state.downcast_mut::<NodeState>();
+        let state = tree.state.downcast_mut::<NodeState>();
 
         if let Some(cursor_position) = cursor.position() {
             if let Some(start) = state.drag_start_position {
@@ -283,12 +306,9 @@ where
 
         if let Some(cursor_position) = cursor.position() {
             if status == event::Status::Ignored && layout.bounds().contains(cursor_position) {
-                match event {
-                    Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                        state.drag_start_position = Some(cursor_position);
-                        status = event::Status::Captured;
-                    }
-                    _ => {}
+                if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
+                    state.drag_start_position = Some(cursor_position);
+                    status = event::Status::Captured;
                 }
             }
         }
@@ -313,23 +333,19 @@ where
         )
     }
 
-    fn width(&self) -> Length {
-        self.width
-    }
-
-    fn height(&self) -> Length {
-        self.height
+    fn size(&self) -> Size<Length> {
+        Size::new(self.width, self.height)
     }
 }
 
-impl<'a, Message, Renderer> From<Node<'a, Message, Renderer>>
-    for GraphNodeElement<'a, Message, Renderer>
+impl<'a, Message, Theme, Renderer> From<Node<'a, Message, Theme, Renderer>>
+    for GraphNodeElement<'a, Message, Theme, Renderer>
 where
     Message: 'a,
     Renderer: renderer::Renderer + 'a,
-    Renderer::Theme: StyleSheet,
+    Theme: StyleSheet<Style = <iced::Theme as StyleSheet>::Style> + 'a,
 {
-    fn from(node: Node<'a, Message, Renderer>) -> Self {
+    fn from(node: Node<'a, Message, Theme, Renderer>) -> Self {
         Self::new(node)
     }
 }

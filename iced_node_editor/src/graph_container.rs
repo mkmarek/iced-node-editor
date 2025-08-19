@@ -1,11 +1,12 @@
 use iced::{
     advanced::{
-        layout,
-        renderer::{self},
-        widget::{self, Operation},
+        layout, renderer,
+        widget::{self, Operation, Tree},
         Clipboard, Layout, Shell, Widget,
     },
-    event, mouse, Background, Color, Element, Event, Length, Point, Rectangle, Size, Vector,
+    border::Radius,
+    event, mouse, Background, Border, Color, Element, Event, Length, Point, Rectangle, Shadow,
+    Size, Vector,
 };
 
 use crate::{
@@ -14,32 +15,34 @@ use crate::{
     GraphNodeElement,
 };
 
-pub struct GraphContainer<'a, Message, Renderer>
+type OnTranslate<'a, Message> = Box<dyn Fn((f32, f32)) -> Message + 'a>;
+type OnScale<'a, Message> = Box<dyn Fn(f32, f32, f32) -> Message + 'a>;
+
+pub struct GraphContainer<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
 {
     width: Length,
     height: Length,
     max_width: f32,
     max_height: f32,
-    style: <Renderer::Theme as StyleSheet>::Style,
-    content: Vec<GraphNodeElement<'a, Message, Renderer>>,
+    style: <iced::Theme as StyleSheet>::Style,
+    content: Vec<GraphNodeElement<'a, Message, Theme, Renderer>>,
     matrix: Matrix,
-    on_translate: Option<Box<dyn Fn((f32, f32)) -> Message + 'a>>,
-    on_scale: Option<Box<dyn Fn(f32, f32, f32) -> Message + 'a>>,
+    on_translate: Option<OnTranslate<'a, Message>>,
+    on_scale: Option<OnScale<'a, Message>>,
 }
 
 struct GraphContainerState {
     drag_start_position: Option<Point>,
 }
 
-impl<'a, Message, Renderer> GraphContainer<'a, Message, Renderer>
+impl<'a, Message, Theme, Renderer> GraphContainer<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
+    Theme: StyleSheet<Style = <iced::Theme as StyleSheet>::Style>,
 {
-    pub fn new(content: Vec<GraphNodeElement<'a, Message, Renderer>>) -> Self {
+    pub fn new(content: Vec<GraphNodeElement<'a, Message, Theme, Renderer>>) -> Self {
         GraphContainer {
             on_translate: None,
             on_scale: None,
@@ -94,26 +97,27 @@ where
         self
     }
 
-    pub fn style(mut self, style: impl Into<<Renderer::Theme as StyleSheet>::Style>) -> Self {
+    pub fn style(mut self, style: impl Into<<iced::Theme as StyleSheet>::Style>) -> Self {
         self.style = style.into();
         self
     }
 }
 
-pub fn graph_container<'a, Message, Renderer>(
-    content: Vec<GraphNodeElement<'a, Message, Renderer>>,
-) -> GraphContainer<'a, Message, Renderer>
+pub fn graph_container<'a, Message, Theme, Renderer>(
+    content: Vec<GraphNodeElement<'a, Message, Theme, Renderer>>,
+) -> GraphContainer<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
+    Theme: StyleSheet<Style = <iced::Theme as StyleSheet>::Style>,
 {
     GraphContainer::new(content)
 }
 
-impl<'a, Message, Renderer> Widget<Message, Renderer> for GraphContainer<'a, Message, Renderer>
+impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for GraphContainer<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Renderer::Theme: StyleSheet,
+    Theme: StyleSheet<Style = <iced::Theme as StyleSheet>::Style>,
 {
     fn children(&self) -> Vec<widget::Tree> {
         let mut children = Vec::new();
@@ -129,25 +133,29 @@ where
         tree.diff_children(self.content.as_slice())
     }
 
-    fn width(&self) -> Length {
-        self.width
-    }
-
-    fn height(&self) -> Length {
-        self.height
+    fn size(&self) -> Size<Length> {
+        Size {
+            width: self.width,
+            height: self.height,
+        }
     }
 
     fn tag(&self) -> widget::tree::Tag {
         widget::tree::Tag::of::<widget::tree::State>()
     }
-    
+
     fn state(&self) -> widget::tree::State {
         widget::tree::State::new(GraphContainerState {
             drag_start_position: None,
         })
     }
 
-    fn layout(&self, _renderer: &Renderer, limits: &layout::Limits) -> layout::Node {
+    fn layout(
+        &self,
+        tree: &mut Tree,
+        renderer: &Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
         let limits = limits
             .loose()
             .max_width(self.max_width)
@@ -160,14 +168,16 @@ where
         let scale = self.matrix.get_scale();
         let offset = self.matrix.get_translation();
 
-        for node in &self.content {
-            let mut node = node.as_scalable_widget().layout(_renderer, &limits, scale);
+        for (node, child) in self.content.iter().zip(tree.children.iter_mut()) {
+            let mut node = node
+                .as_scalable_widget()
+                .layout(child, renderer, &limits, scale);
             node = node.translate(Vector::new(offset.0, offset.1));
 
             content.push(node);
         }
 
-        let size = limits.resolve(Size::ZERO);
+        let size = limits.resolve(self.width, self.height, Size::ZERO);
 
         layout::Node::with_children(size, content)
     }
@@ -177,7 +187,7 @@ where
         tree: &mut widget::Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
-        operation: &mut dyn Operation<Message>,
+        operation: &mut dyn Operation,
     ) {
         operation.container(None, layout.bounds(), &mut |operation| {
             self.content
@@ -204,7 +214,7 @@ where
         viewport: &Rectangle<f32>,
     ) -> event::Status {
         let mut status = event::Status::Ignored;
-        let mut state = tree.state.downcast_mut::<GraphContainerState>();
+        let state = tree.state.downcast_mut::<GraphContainerState>();
 
         if let Some(start) = state.drag_start_position {
             if let Some(cursor_position) = cursor.position() {
@@ -300,7 +310,7 @@ where
         &self,
         state: &widget::Tree,
         renderer: &mut Renderer,
-        theme: &Renderer::Theme,
+        theme: &Theme,
         renderer_style: &renderer::Style,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
@@ -378,35 +388,43 @@ where
                     renderer_style,
                     layout,
                     cursor,
-                    &viewport,
+                    viewport,
                 );
             }
         });
     }
 }
 
-impl<'a, Message, Renderer> From<GraphContainer<'a, Message, Renderer>>
-    for Element<'a, Message, Renderer>
+impl<'a, Message, Theme, Renderer> From<GraphContainer<'a, Message, Theme, Renderer>>
+    for Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
     Renderer: renderer::Renderer + 'a,
-    Renderer::Theme: StyleSheet,
+    Theme: StyleSheet<Style = <iced::Theme as StyleSheet>::Style> + 'a,
+    GraphContainer<'a, Message, Theme, Renderer>: Widget<Message, Theme, Renderer>,
 {
-    fn from(graph_container: GraphContainer<'a, Message, Renderer>) -> Self {
+    fn from(graph_container: GraphContainer<'a, Message, Theme, Renderer>) -> Self {
         Self::new(graph_container)
     }
 }
 
-fn draw_background<'a, Renderer>(renderer: &mut Renderer, bounds: Rectangle, style: Appearance)
+fn draw_background<Renderer>(renderer: &mut Renderer, bounds: Rectangle, style: Appearance)
 where
     Renderer: renderer::Renderer,
 {
     renderer.fill_quad(
         renderer::Quad {
             bounds,
-            border_radius: [0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32].into(),
-            border_width: 0.0_f32,
-            border_color: Color::BLACK,
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: Radius::new(0.0),
+            },
+            shadow: Shadow {
+                color: Color::TRANSPARENT,
+                offset: Vector::ZERO,
+                blur_radius: 0.0,
+            },
         },
         style
             .background
@@ -414,7 +432,7 @@ where
     );
 }
 
-fn draw_guidelines<'a, Renderer>(
+fn draw_guidelines<Renderer>(
     renderer: &mut Renderer,
     bounds: Rectangle,
     offset: (f32, f32),
@@ -454,9 +472,16 @@ fn draw_guidelines<'a, Renderer>(
                     width: 1.0_f32,
                     height: bounds.height,
                 },
-                border_radius: [0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32].into(),
-                border_width: 0.0_f32,
-                border_color: Color::BLACK,
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: Radius::new(0.0),
+                },
+                shadow: Shadow {
+                    color: Color::TRANSPARENT,
+                    offset: Vector::ZERO,
+                    blur_radius: 0.0,
+                },
             },
             Background::Color(color),
         );
@@ -482,9 +507,16 @@ fn draw_guidelines<'a, Renderer>(
                     width: bounds.width,
                     height: 1.0_f32,
                 },
-                border_radius: [0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32].into(),
-                border_width: 0.0_f32,
-                border_color: Color::BLACK,
+                border: Border {
+                    color: Color::TRANSPARENT,
+                    width: 0.0,
+                    radius: Radius::new(0.0),
+                },
+                shadow: Shadow {
+                    color: Color::TRANSPARENT,
+                    offset: Vector::ZERO,
+                    blur_radius: 0.0,
+                },
             },
             Background::Color(color),
         );
@@ -495,8 +527,8 @@ fn normalize_scale(scale: f32) -> f32 {
     let log_2 = scale.log2().floor();
 
     if log_2.abs() > f32::EPSILON {
-        return scale / 2.0_f32.powf(log_2);
+        scale / 2.0_f32.powf(log_2)
     } else {
-        return scale;
+        scale
     }
 }
