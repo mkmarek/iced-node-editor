@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-iced = { version = "0.13.1", features = ["advanced"] }
+iced = { version = "0.14.0", features = ["advanced"] }
 palette = "0.7.3"

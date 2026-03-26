@@ -11,11 +11,7 @@ $ cargo run -p basic_example
 Run these commands in the current directory:
 
 ```bash
-cargo install wasm-bindgen-cli https
+cargo install trunk
 
-cargo build --target wasm32-unknown-unknown
-
-wasm-bindgen ../../target/wasm32-unknown-unknown/debug/basic_example.wasm --out-dir . --target web --no-typescript
-
-http
+trunk serve
 ```

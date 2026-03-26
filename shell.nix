@@ -1,6 +1,11 @@
 { pkgs ? import <nixpkgs> {} }:
 
 pkgs.mkShell rec {
+
+  packages = with pkgs; [
+    trunk
+  ];
+
   buildInputs = with pkgs; [
     pkg-config
     xorg.libX11

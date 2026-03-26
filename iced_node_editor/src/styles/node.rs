@@ -22,7 +22,7 @@ impl std::default::Default for Appearance {
 }
 
 pub trait StyleSheet {
-    type Style: Default;
+    type Style;
     fn appearance(&self, style: &Self::Style) -> Appearance;
 }
 

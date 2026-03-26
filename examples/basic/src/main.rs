@@ -3,7 +3,7 @@ use iced::{Element, Length, Point};
 use iced_node_editor::{connection, graph_container, node, Matrix};
 
 pub fn main() -> iced::Result {
-    iced::application(Example::title, Example::update, Example::view)
+    iced::application(Example::new, Example::update, Example::view)
         .theme(Example::theme)
         .run()?;
 
@@ -56,10 +56,6 @@ impl Example {
         }
     }
 
-    fn title(&self) -> String {
-        String::from("Iced Graph Editor - Basic Example")
-    }
-
     fn theme(&self) -> iced::Theme {
         iced::Theme::Dark
     }
@@ -67,10 +63,11 @@ impl Example {
     fn update(&mut self, _message: Message) {
         match _message {
             Message::ScaleChanged(x, y, scale) => {
+                let factor = 1.0 + scale.abs() * 0.002;
                 self.matrix = self
                     .matrix
                     .translate(-x, -y)
-                    .scale(if scale > 0.0 { 1.2 } else { 1.0 / 1.2 })
+                    .scale(if scale > 0.0 { factor } else { 1.0 / factor })
                     .translate(x, y);
             }
             Message::TranslationChanged(x, y) => self.matrix = self.matrix.translate(x, y),
@@ -83,7 +80,7 @@ impl Example {
         }
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         let mut graph_content = Vec::new();
 
         for (i, n) in self.nodes.iter().enumerate() {

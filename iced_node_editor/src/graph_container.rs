@@ -18,6 +18,8 @@ use crate::{
 type OnTranslate<'a, Message> = Box<dyn Fn((f32, f32)) -> Message + 'a>;
 type OnScale<'a, Message> = Box<dyn Fn(f32, f32, f32) -> Message + 'a>;
 
+const LINES_SCROLL_SENSITIVITY: f32 = 100.0;
+
 pub struct GraphContainer<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
@@ -151,7 +153,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -168,9 +170,9 @@ where
         let scale = self.matrix.get_scale();
         let offset = self.matrix.get_translation();
 
-        for (node, child) in self.content.iter().zip(tree.children.iter_mut()) {
+        for (node, child) in self.content.iter_mut().zip(tree.children.iter_mut()) {
             let mut node = node
-                .as_scalable_widget()
+                .as_scalable_widget_mut()
                 .layout(child, renderer, &limits, scale);
             node = node.translate(Vector::new(offset.0, offset.1));
 
@@ -183,37 +185,36 @@ where
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut widget::Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
         operation: &mut dyn Operation,
     ) {
-        operation.container(None, layout.bounds(), &mut |operation| {
+        operation.traverse(&mut |operation| {
             self.content
-                .iter()
+                .iter_mut()
                 .zip(&mut tree.children)
                 .zip(layout.children())
                 .for_each(|((child, state), layout)| {
                     child
-                        .as_widget()
+                        .as_widget_mut()
                         .operate(state, layout, renderer, operation);
                 })
         });
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut widget::Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle<f32>,
-    ) -> event::Status {
-        let mut status = event::Status::Ignored;
+    ) {
         let state = tree.state.downcast_mut::<GraphContainerState>();
 
         if let Some(start) = state.drag_start_position {
@@ -229,60 +230,55 @@ where
                             let message = f((delta.x, delta.y));
                             shell.publish(message);
                         }
-                        status = event::Status::Captured;
+                        shell.capture_event();
                     }
                     _ => {}
                 }
             }
         } else {
-            status = self
-                .content
+            self.content
                 .iter_mut()
                 .zip(&mut tree.children)
                 .zip(layout.children())
-                .map(|((child, state), layout)| {
-                    child.as_widget_mut().on_event(
-                        state,
-                        event.clone(),
-                        layout,
-                        cursor,
-                        renderer,
-                        clipboard,
-                        shell,
-                        viewport,
+                .for_each(|((child, state), layout)| {
+                    child.as_widget_mut().update(
+                        state, event, layout, cursor, renderer, clipboard, shell, viewport,
                     )
                 })
-                .fold(event::Status::Ignored, event::Status::merge);
         }
 
-        if status == event::Status::Ignored {
+        if shell.event_status() == event::Status::Ignored {
             if let Some(cursor_position) = cursor.position() {
                 match event {
                     Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                         state.drag_start_position = Some(cursor_position);
-                        status = event::Status::Captured;
+                        shell.capture_event();
                     }
                     Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                         if let Some(f) = &self.on_scale {
                             match delta {
                                 mouse::ScrollDelta::Lines { y, .. } => {
-                                    let message = f(cursor_position.x, cursor_position.y, y);
+                                    let message = f(
+                                        cursor_position.x,
+                                        cursor_position.y,
+                                        y * LINES_SCROLL_SENSITIVITY,
+                                    );
                                     shell.publish(message);
                                 }
                                 mouse::ScrollDelta::Pixels { y, .. } => {
-                                    let message = f(cursor_position.x, cursor_position.y, y);
-                                    shell.publish(message);
+                                    if y.abs() > f32::EPSILON {
+                                        let message = f(cursor_position.x, cursor_position.y, *y);
+                                        shell.publish(message);
+                                    }
                                 }
                             }
-                            status = event::Status::Captured;
+                            shell.capture_event();
                         }
                     }
                     _ => {}
                 }
             }
         }
-
-        status
     }
 
     fn mouse_interaction(
@@ -425,6 +421,7 @@ where
                 offset: Vector::ZERO,
                 blur_radius: 0.0,
             },
+            snap: true,
         },
         style
             .background
@@ -482,6 +479,7 @@ fn draw_guidelines<Renderer>(
                     offset: Vector::ZERO,
                     blur_radius: 0.0,
                 },
+                snap: true,
             },
             Background::Color(color),
         );
@@ -517,6 +515,7 @@ fn draw_guidelines<Renderer>(
                     offset: Vector::ZERO,
                     blur_radius: 0.0,
                 },
+                snap: true,
             },
             Background::Color(color),
         );

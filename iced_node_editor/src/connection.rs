@@ -56,7 +56,7 @@ where
     Renderer: renderer::Renderer,
 {
     fn layout(
-        &self,
+        &mut self,
         _tree: &mut Tree,
         _renderer: &Renderer,
         _limits: &Limits,
@@ -95,7 +95,7 @@ where
     Theme: StyleSheet<Style = <iced::Theme as StyleSheet>::Style>,
 {
     fn layout(
-        &self,
+        &mut self,
         _tree: &mut Tree,
         _renderer: &Renderer,
         _limits: &Limits,

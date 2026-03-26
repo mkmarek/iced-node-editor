@@ -12,6 +12,9 @@ pub trait GraphWidget<'a, Message, Theme, Renderer: renderer::Renderer>:
     fn as_widget(&self) -> &(dyn Widget<Message, Theme, Renderer> + 'a);
     fn as_widget_mut(&mut self) -> &mut (dyn Widget<Message, Theme, Renderer> + 'a);
     fn as_scalable_widget(&self) -> &(dyn ScalableWidget<Message, Theme, Renderer> + 'a);
+    fn as_scalable_widget_mut(
+        &mut self,
+    ) -> &mut (dyn ScalableWidget<Message, Theme, Renderer> + 'a);
 }
 
 impl<'a, T, Message, Theme, Renderer: renderer::Renderer> GraphWidget<'a, Message, Theme, Renderer>
@@ -30,6 +33,12 @@ where
     fn as_scalable_widget(&self) -> &(dyn ScalableWidget<Message, Theme, Renderer> + 'a) {
         self
     }
+
+    fn as_scalable_widget_mut(
+        &mut self,
+    ) -> &mut (dyn ScalableWidget<Message, Theme, Renderer> + 'a) {
+        self
+    }
 }
 
 pub trait ScalableWidget<Message, Theme, Renderer>
@@ -37,7 +46,7 @@ where
     Renderer: renderer::Renderer,
 {
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -65,6 +74,10 @@ where
 
     pub fn as_scalable_widget(&self) -> &dyn ScalableWidget<Message, Theme, Renderer> {
         self.widget.as_scalable_widget()
+    }
+
+    pub fn as_scalable_widget_mut(&mut self) -> &mut dyn ScalableWidget<Message, Theme, Renderer> {
+        self.widget.as_scalable_widget_mut()
     }
 }
 

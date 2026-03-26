@@ -2,9 +2,10 @@ use iced::advanced::layout::Limits;
 use iced::advanced::widget::tree::State;
 use iced::advanced::widget::Tree;
 use iced::advanced::{renderer, widget, Clipboard, Layout, Shell, Widget};
+use iced::event::Status;
 use iced::{
-    alignment, event, mouse, Alignment, Background, Border, Color, Element, Event, Length, Padding,
-    Point, Rectangle, Shadow, Size, Vector,
+    alignment, mouse, Alignment, Background, Border, Color, Element, Event, Length, Padding, Point,
+    Rectangle, Shadow, Size, Vector,
 };
 
 use crate::{
@@ -137,7 +138,7 @@ where
     Renderer: renderer::Renderer,
 {
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &Limits,
@@ -150,18 +151,18 @@ where
             .width(self.width)
             .height(self.height);
 
-        let content = self.content.as_widget().layout(
+        let content = self.content.as_widget_mut().layout(
             tree.children.first_mut().unwrap(),
             renderer,
-            &limits
-                .shrink((self.padding.horizontal(), self.padding.vertical()))
-                .loose(),
+            &limits.shrink((self.padding.x(), self.padding.y())).loose(),
         );
 
         let padding = self.padding.fit(content.size(), limits.max());
-        let size = limits
-            .shrink((padding.horizontal(), padding.vertical()))
-            .resolve(self.width, self.height, content.size());
+        let size = limits.shrink((padding.x(), padding.y())).resolve(
+            self.width,
+            self.height,
+            content.size(),
+        );
 
         let size = Size::new(size.width * scale, size.height * scale);
 
@@ -204,7 +205,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         _tree: &mut Tree,
         _renderer: &Renderer,
         _limits: &Limits,
@@ -239,6 +240,7 @@ where
                         offset: Vector::ZERO,
                         blur_radius: 0.0,
                     },
+                    snap: true,
                 },
                 style
                     .background
@@ -259,18 +261,17 @@ where
         );
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut widget::Tree,
-        event: Event,
+        event: &iced::Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle<f32>,
-    ) -> event::Status {
-        let mut status = event::Status::Ignored;
+    ) {
         let state = tree.state.downcast_mut::<NodeState>();
 
         if let Some(cursor_position) = cursor.position() {
@@ -282,18 +283,19 @@ where
                     Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                         let delta = cursor_position - start;
                         state.drag_start_position = Some(cursor_position);
+
                         if let Some(f) = &self.on_translate {
                             let message = f((delta.x, delta.y));
                             shell.publish(message);
                         }
-                        status = event::Status::Captured;
+                        shell.capture_event();
                     }
                     _ => {}
                 }
             } else {
-                status = self.content.as_widget_mut().on_event(
+                self.content.as_widget_mut().update(
                     &mut tree.children[0],
-                    event.clone(),
+                    event,
                     layout,
                     cursor,
                     renderer,
@@ -305,15 +307,14 @@ where
         }
 
         if let Some(cursor_position) = cursor.position() {
-            if status == event::Status::Ignored && layout.bounds().contains(cursor_position) {
+            if shell.event_status() == Status::Ignored && layout.bounds().contains(cursor_position)
+            {
                 if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = event {
                     state.drag_start_position = Some(cursor_position);
-                    status = event::Status::Captured;
+                    shell.capture_event();
                 }
             }
         }
-
-        status
     }
 
     fn mouse_interaction(
